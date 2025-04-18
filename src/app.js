@@ -18,12 +18,22 @@ import * as utils from './utils.js';
  * @see {@link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all | MDN: Promise.all}
  */
 async function initialize() {
+  // CHALLENGE 18: Implement initialize function
+  // 1. Use Promise.all to initialize both the cache and favorites in parallel
+  // 2. After initialization, clear expired cache entries
+  // 3. Return true if successful
+  // 4. Catch any errors, log them, and return false
+
+  // YOUR CODE HERE
   try {
-    await Promise.all([cache.initialize(), favorites.initialize()]);
-    cache.clearExpired();
+    await Promise.all([
+      cache.initializeCache(),
+      favorites.initializeFavorites()
+    ]);
+    await cache.clearExpiredCache();
     return true;
   } catch (error) {
-    console.error('Initialization error:', error);
+    console.error('Error during initialization:', error.message);
     return false;
   }
 }
@@ -46,28 +56,33 @@ async function searchRecipes() {
   console.log(`Searching for "${query}"...`);
 
   try {
-    const cacheKey = `search_${query.toLowerCase()}`;
-    const cachedResults = await cache.getCachedOrFetch(cacheKey, () => api.searchMealsByName(query));
+    // CHALLENGE 19: Implement searchRecipes function
+    // 1. Create a cache key for this search (e.g., `search_${query.toLowerCase()}`)
+    // 2. Use cache.getCachedOrFetch to:
+    //    - Try to get results from cache first
+    //    - Fall back to api.searchMealsByName(query) if not in cache
+    // 3. Display the results using utils.formatRecipeList
+    // 4. If recipes were found, offer to view details for a specific recipe
+    // 5. If the user wants to view details, call viewRecipeDetails with the chosen recipe ID
 
-    if (Array.isArray(cachedResults) && cachedResults.length === 0) {
-      console.log('No recipes found.');
+    // YOUR CODE HERE
+    const cacheKey = `search_${query.toLowerCase()}`;
+    const results = await cache.getCachedOrFetch(cacheKey, () => api.searchMealsByName(query));
+
+    if (results.length === 0) {
+      console.log('No recipes found');
       return;
     }
 
-    console.log(utils.formatRecipeList(cachedResults));
+    console.log(utils.formatRecipeList(results));
 
     const viewDetails = readlineSync.keyInYNStrict('Would you like to view details for a recipe?');
-
     if (viewDetails) {
-      const index = readlineSync.questionInt(`Enter recipe number (1-${cachedResults.length}): `, {
-        limit: input => {
-          const num = parseInt(input);
-          return num >= 1 && num <= cachedResults.length;
-        },
-        limitMessage: `Please enter a number between 1 and ${cachedResults.length}`
+      const index = readlineSync.questionInt(`Enter recipe number (1-${results.length}): `, {
+        limit: input => input >= 1 && input <= results.length,
+        limitMessage: `Please enter a number between 1 and ${results.length}`
       });
-
-      await viewRecipeDetails(cachedResults[index - 1].idMeal);
+      await viewRecipeDetails(results[index - 1].idMeal);
     }
   } catch (error) {
     console.error('Error searching recipes:', error.message);
@@ -96,74 +111,46 @@ async function viewRecipeDetails(recipeId) {
   console.log(`Fetching details for recipe ${recipeId}...`);
 
   try {
+    // CHALLENGE 20: Implement viewRecipeDetails function
+    // 1. Create a cache key for this recipe (e.g., `recipe_${recipeId}`)
+    // 2. Use cache.getCachedOrFetch to get recipe details
+    // 3. If no recipe is found, display a message and return
+    // 4. Display the recipe using utils.formatRecipe
+    // 5. Check if the recipe is in favorites and offer to add/remove
+    // 6. Use Promise chaining (.then, .catch) to:
+    //    - Fetch related recipes based on this recipe's category
+    //    - Display them when the promise resolves
+    //    - Handle any errors in the chain
+
+    // YOUR CODE HERE
     const cacheKey = `recipe_${recipeId}`;
-    const recipe = await cache.getCachedOrFetch(cacheKey, () => api.getRecipeById(recipeId));
+    const recipeDetails = await cache.getCachedOrFetch(cacheKey, () => api.getMealById(recipeId));
 
-    if (!recipe) {
+    if (!recipeDetails) {
       console.log('Recipe not found');
       return;
     }
 
-    console.log(utils.formatRecipe(recipe));
+    console.log(utils.formatRecipe(recipeDetails));
 
-    const isFavorite = await favorites.isFavorite(recipeId);
+    const isFavorite = await favorites.isInFavorites(recipeDetails.idMeal);
+    const action = readlineSync.keyInYNStrict(isFavorite ? 'Remove from favorites?' : 'Add to favorites?');
 
-    if (isFavorite) {
-      const removeFavorite = readlineSync.keyInYNStrict('Would you like to remove this recipe from favorites?');
-      if (removeFavorite) {
-        await favorites.removeFavorite(recipeId);
-        console.log('Recipe removed from favorites');
-      }
-    } else {
-      const addFavorite = readlineSync.keyInYNStrict('Would you like to add this recipe to favorites?');
-      if (addFavorite) {
-        await favorites.addFavorite(recipe);
-        console.log('Recipe added to favorites');
+    if (action) {
+      if (isFavorite) {
+        await favorites.removeFavorite(recipeDetails.idMeal);
+        console.log('Recipe removed from favorites.');
+      } else {
+        await favorites.addFavorite(recipeDetails);
+        console.log('Recipe added to favorites.');
       }
     }
 
-    const relatedRecipes = await api.getRelatedRecipes(recipeId);
-    console.log('Related Recipes:');
-    console.log(utils.formatRecipeList(relatedRecipes));
-
-  } catch (error) {
-    console.error('Error viewing recipe details:', error.message);
-  }
-}
-
-
-
-
-
-You said:
-remember keep the code simple dont do anything extra
-
-
-ChatGPT said:
-js
-Copy
-Edit
-async function viewRecipeDetails(recipeId) {
-  if (!recipeId) {
-    recipeId = readlineSync.question('Enter recipe ID: ');
-  }
-
-  if (!recipeId.trim()) {
-    console.log('Recipe ID cannot be empty');
-    return;
-  }
-
-  console.log(`Fetching details for recipe ${recipeId}...`);
-
-  try {
-    const recipe = await cache.getCachedOrFetch(`recipe_${recipeId}`, () => api.getRecipeById(recipeId));
-
-    if (!recipe) {
-      console.log('Recipe not found');
-      return;
+    const relatedRecipes = await api.getRelatedRecipes(recipeDetails);
+    if (relatedRecipes && relatedRecipes.length > 0) {
+      console.log('Related Recipes:');
+      console.log(utils.formatRecipeList(relatedRecipes));
     }
-
-    console.log(utils.formatRecipe(recipe));
   } catch (error) {
     console.error('Error viewing recipe details:', error.message);
   }
@@ -187,27 +174,31 @@ async function exploreByFirstLetter() {
   console.log(`Searching for recipes starting with: ${uniqueLetters.join(', ')}...`);
 
   try {
-    const recipes = await cache.getCachedOrFetch(`letters_${uniqueLetters.sort().join('')}`, () => api.searchMealsByFirstLetter(uniqueLetters.join(',')));
+    // CHALLENGE 21: Implement exploreByFirstLetter function
+    // 1. Create a cache key for these letters (e.g., `letters_${uniqueLetters.sort().join('')}`)
+    // 2. Use cache.getCachedOrFetch to get recipes, falling back to api.searchMealsByFirstLetter
+    // 3. Display the results using utils.formatRecipeList
+    // 4. If recipes were found, offer to view details for a specific recipe
+    // 5. If the user wants to view details, call viewRecipeDetails with the chosen recipe ID
 
-    if (!recipes || recipes.length === 0) {
+    // YOUR CODE HERE
+    const cacheKey = `letters_${uniqueLetters.sort().join('')}`;
+    const results = await cache.getCachedOrFetch(cacheKey, () => api.searchMealsByFirstLetter(uniqueLetters));
+
+    if (results.length === 0) {
       console.log('No recipes found');
       return;
     }
 
-    console.log(utils.formatRecipeList(recipes));
+    console.log(utils.formatRecipeList(results));
 
-    const viewDetails = readlineSync.keyInYN('Would you like to view details for a recipe?');
-
+    const viewDetails = readlineSync.keyInYNStrict('Would you like to view details for a recipe?');
     if (viewDetails) {
-      const index = readlineSync.questionInt(`Enter recipe number (1-${recipes.length}): `, {
-        limit: input => {
-          const num = parseInt(input);
-          return num >= 1 && num <= recipes.length;
-        },
-        limitMessage: `Please enter a number between 1 and ${recipes.length}`
+      const index = readlineSync.questionInt(`Enter recipe number (1-${results.length}): `, {
+        limit: input => input >= 1 && input <= results.length,
+        limitMessage: `Please enter a number between 1 and ${results.length}`
       });
-
-      await viewRecipeDetails(recipes[index - 1].idMeal);
+      await viewRecipeDetails(results[index - 1].idMeal);
     }
   } catch (error) {
     console.error('Error exploring recipes by first letter:', error.message);
@@ -229,27 +220,38 @@ async function searchByIngredient() {
   console.log(`Searching for recipes with ${ingredient}...`);
 
   try {
-    const recipes = await cache.getCachedOrFetch(`ingredient_${ingredient.toLowerCase()}`, () => api.getMealsByIngredient(ingredient));
+    // CHALLENGE 22: Implement searchByIngredient function
+    // 1. Create a cache key for this ingredient (e.g., `ingredient_${ingredient.toLowerCase()}`)
+    // 2. Use cache.getCachedOrFetch to get results, falling back to api.getMealsByIngredient
+    // 3. Check if the result is a string (error message) or an array
+    // 4. If it's a string, display the message and return
+    // 5. Display the results using utils.formatRecipeList
+    // 6. If recipes were found, offer to view details for a specific recipe
+    // 7. If the user wants to view details, call viewRecipeDetails with the chosen recipe ID
 
-    if (typeof recipes === 'string') {
-      console.log(recipes); // Display error message
+    // YOUR CODE HERE
+    const cacheKey = `ingredient_${ingredient.toLowerCase()}`;
+    const results = await cache.getCachedOrFetch(cacheKey, () => api.getMealsByIngredient(ingredient));
+
+    if (typeof results === 'string') {
+      console.log(results);
       return;
     }
 
-    console.log(utils.formatRecipeList(recipes));
+    if (results.length === 0) {
+      console.log('No recipes found');
+      return;
+    }
 
-    const viewDetails = readlineSync.keyInYN('Would you like to view details for a recipe?');
+    console.log(utils.formatRecipeList(results));
 
+    const viewDetails = readlineSync.keyInYNStrict('Would you like to view details for a recipe?');
     if (viewDetails) {
-      const index = readlineSync.questionInt(`Enter recipe number (1-${recipes.length}): `, {
-        limit: input => {
-          const num = parseInt(input);
-          return num >= 1 && num <= recipes.length;
-        },
-        limitMessage: `Please enter a number between 1 and ${recipes.length}`
+      const index = readlineSync.questionInt(`Enter recipe number (1-${results.length}): `, {
+        limit: input => input >= 1 && input <= results.length,
+        limitMessage: `Please enter a number between 1 and ${results.length}`
       });
-
-      await viewRecipeDetails(recipes[index - 1].idMeal);
+      await viewRecipeDetails(results[index - 1].idMeal);
     }
   } catch (error) {
     console.error('Error searching by ingredient:', error.message);
@@ -272,7 +274,7 @@ async function viewFavorites() {
     console.log(utils.formatRecipeList(favoriteRecipes));
 
     // Allow viewing details
-    const viewDetails = readlineSync.keyInYN('Would you like to view details for a recipe?');
+    const viewDetails = readlineSync.keyInYNStrict('Would you like to view details for a recipe?');
 
     if (viewDetails) {
       const index = readlineSync.questionInt(`Enter recipe number (1-${favoriteRecipes.length}): `, {
@@ -301,30 +303,39 @@ async function discoverRandom() {
   console.log('Fetching random recipes...');
 
   try {
-    const randomRecipes = await Promise.race([
+    // CHALLENGE 23: Implement discoverRandom function
+    // 1. Create three promises for random recipes using api.getRandomMeal()
+    // 2. Use Promise.race to get the first one that resolves
+    // 3. Handle the case where no recipe is found
+    // 4. Display the recipe using utils.formatRecipe
+    // 5. Check if the recipe is in favorites and offer to add/remove
+    // 6. Handle any errors appropriately
+
+    // YOUR CODE HERE
+    const randomRecipePromises = [
       api.getRandomMeal(),
       api.getRandomMeal(),
       api.getRandomMeal()
-    ]);
+    ];
 
-    if (!randomRecipes) {
-      console.log('No random recipe found.');
+    const randomRecipe = await Promise.race(randomRecipePromises);
+
+    if (!randomRecipe) {
+      console.log('No random recipe found');
       return;
     }
 
-    console.log(utils.formatRecipe(randomRecipes));
+    console.log(utils.formatRecipe(randomRecipe));
 
-    const isFavorite = await favorites.isFavorite(randomRecipes.idMeal);
-    if (isFavorite) {
-      const removeFromFavorites = readlineSync.keyInYNStrict('This recipe is in your favorites. Would you like to remove it?');
-      if (removeFromFavorites) {
-        await favorites.removeFromFavorites(randomRecipes.idMeal);
+    const isFavorite = await favorites.isInFavorites(randomRecipe.idMeal);
+    const action = readlineSync.keyInYNStrict(isFavorite ? 'Remove from favorites?' : 'Add to favorites?');
+
+    if (action) {
+      if (isFavorite) {
+        await favorites.removeFavorite(randomRecipe.idMeal);
         console.log('Recipe removed from favorites.');
-      }
-    } else {
-      const addToFavorites = readlineSync.keyInYNStrict('Would you like to add this recipe to favorites?');
-      if (addToFavorites) {
-        await favorites.addToFavorites(randomRecipes);
+      } else {
+        await favorites.addFavorite(randomRecipe);
         console.log('Recipe added to favorites.');
       }
     }
@@ -373,7 +384,6 @@ async function showMainMenu() {
     case 7:
       console.log('Thank you for using Recipe Explorer!');
       process.exit(0);
-      break;
   }
 
   // Return to main menu after function completes
@@ -387,15 +397,24 @@ async function showMainMenu() {
  * @see {@link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/catch | MDN: Promise.catch}
  */
 async function main() {
-  console.log('Initializing Recipe Explorer...');
+  // CHALLENGE 24: Implement main function
+  // 1. Display an initialization message
+  // 2. Call initialize() to set up the application
+  // 3. Handle initialization failure (exit with error code 1)
+  // 4. Display a welcome message on success
+  // 5. Start the main menu loop by calling showMainMenu()
+  // 6. Add error handling for any uncaught exceptions
 
-  const success = await initialize();
-  if (!success) {
+  // YOUR CODE HERE
+  console.log('Initializing the Recipe Explorer...');
+
+  const initializationSuccessful = await initialize();
+
+  if (!initializationSuccessful) {
     console.error('Initialization failed. Exiting...');
     process.exit(1);
   }
-
-  console.log('Welcome to Recipe Explorer!');
+  console.log('Welcome to the Recipe Explorer!');
   await showMainMenu();
 }
 
